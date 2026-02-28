@@ -91,7 +91,6 @@
             background-color: var(--gb-dark);
         }
 
-        /* Action buttons slightly larger */
         .action-buttons .btn {
             border-radius: 50%;
             width: 80px;
@@ -132,7 +131,7 @@
 
     // --- GAME ENGINE STATE ---
     let cameraX = 0;
-    let gameState = "PLAYING"; // PLAYING, BOSS, GAMEOVER, WIN
+    let gameState = "PLAYING"; 
     
     // Inputs
     const keys = { left: false, right: false, jump: false, shoot: false };
@@ -148,23 +147,20 @@
     let lasers = [];
     let enemyLasers = [];
     let enemies = [];
-    let particles = [];
     
-    // The Boss
     let boss = null;
 
     // --- LEVEL DATA (The Frozen Wastes) ---
-    // 1 = solid ground/platform, 0 = empty space
+    // UPDATED: Exactly 9 rows to fit the canvas height perfectly. Floor is now visible!
     const levelMap = [
         "                                                                                          ",
         "                                                                                          ",
         "                                                                                          ",
         "                                           111                                            ",
-        "                                                                                          ",
         "                        111                                                               ",
         "                                                     1111           11111                 ",
         "               111                                                                        ",
-        "                                      111                                                 ",
+        "111111111111          1111111    1111111111111111          1111111111111111111111111111111",
         "111111111111          1111111    1111111111111111          1111111111111111111111111111111"
     ];
     
@@ -183,9 +179,9 @@
     }
 
     // Add some initial enemies
-    enemies.push({ x: 300, y: 200, width: 16, height: 16, vx: -1, startX: 300, patrol: 50, hp: 2 });
-    enemies.push({ x: 700, y: 200, width: 16, height: 16, vx: -1, startX: 700, patrol: 50, hp: 2 });
-    enemies.push({ x: 1200, y: 200, width: 16, height: 16, vx: -1, startX: 1200, patrol: 50, hp: 2 });
+    enemies.push({ x: 300, y: 192, width: 16, height: 16, vx: -1, startX: 300, patrol: 50, hp: 2 });
+    enemies.push({ x: 700, y: 192, width: 16, height: 16, vx: -1, startX: 700, patrol: 50, hp: 2 });
+    enemies.push({ x: 1200, y: 192, width: 16, height: 16, vx: -1, startX: 1200, patrol: 50, hp: 2 });
 
     // --- CONTROLS LOGIC ---
     function setupControls() {
@@ -200,19 +196,19 @@
         bindBtn('btn-right', 'right');
         bindBtn('btn-jump', 'jump');
         
-        // Shooting needs a cooldown, so we handle it slightly differently
         const shootBtn = document.getElementById('btn-shoot');
         const fire = (e) => {
             e.preventDefault();
             if (gameState === "PLAYING" || gameState === "BOSS") {
                 lasers.push({
-                    x: player.facingRight ? player.x + player.width : player.x - 8,
-                    y: player.y + 8,
-                    width: 8, height: 4,
+                    // Shoot from the gun barrel
+                    x: player.facingRight ? player.x + 18 : player.x - 8,
+                    y: player.y + 14, 
+                    width: 6, height: 3,
                     vx: player.facingRight ? 5 : -5
                 });
             } else if (gameState === "GAMEOVER" || gameState === "WIN") {
-                location.reload(); // Restart game
+                location.reload(); 
             }
         };
         shootBtn.addEventListener('touchstart', fire);
@@ -249,7 +245,7 @@
         if (player.x < cameraX) player.x = cameraX;
 
         // Vertical Movement (Gravity)
-        player.vy += 0.3; // Gravity
+        player.vy += 0.3; 
         if (keys.jump && player.grounded) {
             player.vy = player.jumpPower;
             player.grounded = false;
@@ -261,11 +257,11 @@
         // Y Collision
         for (let p of platforms) {
             if (checkAABB(player, p)) {
-                if (player.vy > 0) { // Landing
+                if (player.vy > 0) { 
                     player.y = p.y - player.height;
                     player.vy = 0;
                     player.grounded = true;
-                } else if (player.vy < 0) { // Hitting head
+                } else if (player.vy < 0) { 
                     player.y = p.y + p.height;
                     player.vy = 0;
                 }
@@ -291,14 +287,14 @@
     function takeDamage(amt) {
         if (player.invulnTimer > 0) return;
         player.hp -= amt;
-        player.invulnTimer = 30; // 30 frames of flashing
+        player.invulnTimer = 30; 
         if (player.hp <= 0) gameState = "GAMEOVER";
     }
 
     // --- BOSS LOGIC ---
     function spawnBoss() {
         boss = {
-            x: cameraX + 250, y: 150, width: 32, height: 32,
+            x: cameraX + 250, y: 192, width: 32, height: 32,
             hp: 20, maxHp: 20,
             state: "IDLE", timer: 0
         };
@@ -306,18 +302,25 @@
 
     function updateBoss() {
         if (!boss) return;
-        
         boss.timer++;
         
-        // Simple Boss AI: Move and shoot
         if (boss.state === "IDLE") {
             if (boss.timer > 60) {
                 boss.state = "ATTACK";
                 boss.timer = 0;
             }
         } else if (boss.state === "ATTACK") {
-            // Move up and down, shoot 3 lasers
-            boss.y = 150 + Math.sin(boss.timer * 0.1) * 50;
+            // Boss jumps up and down while shooting
+            if (boss.timer === 1) boss.vy = -6; 
+            
+            boss.vy += 0.3; // Boss Gravity
+            boss.y += boss.vy;
+            
+            // Floor collision for Boss
+            if (boss.y > 192) {
+                boss.y = 192;
+                boss.vy = 0;
+            }
             
             if (boss.timer % 30 === 0) {
                 enemyLasers.push({
@@ -331,7 +334,6 @@
             }
         }
 
-        // Boss Collision with Player
         if (checkAABB(player, boss)) takeDamage(1);
     }
 
@@ -345,7 +347,6 @@
                 lasers[i].x += lasers[i].vx;
                 let hit = false;
                 
-                // Hit Enemies
                 for (let j = enemies.length - 1; j >= 0; j--) {
                     if (checkAABB(lasers[i], enemies[j])) {
                         enemies[j].hp--;
@@ -355,7 +356,6 @@
                     }
                 }
 
-                // Hit Boss
                 if (boss && checkAABB(lasers[i], boss)) {
                     boss.hp--;
                     hit = true;
@@ -401,37 +401,66 @@
         // Draw Platforms
         ctx.fillStyle = COLOR.dark;
         for (let p of platforms) {
-            // Only draw if on screen
             if (p.x + p.width > cameraX && p.x < cameraX + canvas.width) {
                 ctx.fillRect(p.x, p.y, p.width, p.height);
-                // Detail line for retro look
                 ctx.fillStyle = COLOR.light;
-                ctx.fillRect(p.x, p.y, p.width, 2);
+                ctx.fillRect(p.x, p.y, p.width, 2); // Snow highlight
                 ctx.fillStyle = COLOR.dark;
             }
         }
 
-        // Draw Enemies
-        ctx.fillStyle = COLOR.solid;
+        // Draw Cyclops Enemies
         for (let e of enemies) {
+            ctx.fillStyle = COLOR.dark;
             ctx.fillRect(e.x, e.y, e.width, e.height);
+            // Cyclops Eye
+            ctx.fillStyle = COLOR.lightest;
+            ctx.fillRect(e.x + 4, e.y + 4, 8, 4);
+            ctx.fillStyle = COLOR.solid;
+            ctx.fillRect(e.x + 6, e.y + 4, 4, 4);
         }
 
         // Draw Boss
         if (boss) {
             ctx.fillStyle = COLOR.solid;
             ctx.fillRect(boss.x, boss.y, boss.width, boss.height);
-            // Boss Eye
             ctx.fillStyle = COLOR.bg;
             ctx.fillRect(boss.x + 8, boss.y + 8, 8, 8);
         }
 
-        // Draw Player (Flashes if invincible)
+        // --- NEW: Draw Space Cowboy Player ---
         if (player.invulnTimer % 4 < 2) {
+            let px = player.x;
+            let py = player.y;
+
+            // Hat Crown
             ctx.fillStyle = COLOR.solid;
-            ctx.fillRect(player.x, player.y, player.width, player.height);
-            // Little hat detail for the cowboy
-            ctx.fillRect(player.x - 2, player.y, player.width + 4, 4);
+            ctx.fillRect(px + 2, py, 12, 4);
+            // Hat Brim
+            ctx.fillRect(px - 4, py + 4, 24, 2);
+            // Head/Face
+            ctx.fillStyle = COLOR.bg; 
+            ctx.fillRect(px + 2, py + 6, 12, 6);
+            // Eyes
+            ctx.fillStyle = COLOR.solid; 
+            if (player.facingRight) {
+                ctx.fillRect(px + 10, py + 8, 2, 2);
+            } else {
+                ctx.fillRect(px + 4, py + 8, 2, 2);
+            }
+            // Torso / Poncho
+            ctx.fillStyle = COLOR.dark;
+            ctx.fillRect(px, py + 12, 16, 8);
+            // Legs
+            ctx.fillStyle = COLOR.solid;
+            ctx.fillRect(px + 2, py + 20, 4, 4);
+            ctx.fillRect(px + 10, py + 20, 4, 4);
+            // Gun
+            if (player.facingRight) {
+                ctx.fillRect(px + 12, py + 14, 8, 3); 
+            } else {
+                ctx.fillRect(px - 4, py + 14, 8, 3); 
+            }
         }
 
         // Draw Lasers
@@ -441,12 +470,12 @@
 
         ctx.restore();
 
-        // Draw UI (Health)
+        // Draw UI
         ctx.fillStyle = COLOR.solid;
         ctx.font = "16px monospace";
         ctx.fillText("HP: " + "█".repeat(player.hp), 10, 20);
 
-        // State Text Overlays
+        // State Overlays
         if (gameState === "BOSS") {
             ctx.fillText("BOSS: " + "█".repeat(Math.ceil(boss.hp/2)), canvas.width / 2 - 80, 20);
         } else if (gameState === "GAMEOVER") {
