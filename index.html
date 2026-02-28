@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Bounty Hunter: Betrayal</title>
+    <title>Bounty Hunter: Desert Wastes</title>
     <style>
         /* Classic Gameboy Palette */
         :root {
@@ -22,11 +22,10 @@
             align-items: center;
             height: 100vh;
             overflow: hidden;
-            touch-action: none; /* Prevents pull-to-refresh on mobile */
+            touch-action: none; 
             font-family: monospace;
         }
 
-        /* The Game Screen */
         #game-container {
             width: 100%;
             max-width: 600px;
@@ -47,7 +46,6 @@
             object-fit: contain;
         }
 
-        /* Mobile Controls */
         #controls {
             width: 100%;
             max-width: 600px;
@@ -87,9 +85,7 @@
             user-select: none;
         }
         
-        .btn:active {
-            background-color: var(--gb-dark);
-        }
+        .btn:active { background-color: var(--gb-dark); }
 
         .action-buttons .btn {
             border-radius: 50%;
@@ -121,7 +117,6 @@
     const canvas = document.getElementById('gameCanvas');
     const ctx = canvas.getContext('2d');
 
-    // Gameboy Colors
     const COLOR = {
         bg: '#9bbc0f',
         light: '#8bac0f',
@@ -129,17 +124,16 @@
         solid: '#0f380f'
     };
 
-    // --- GAME ENGINE STATE ---
     let cameraX = 0;
     let gameState = "PLAYING"; 
-    
-    // Inputs
     const keys = { left: false, right: false, jump: false, shoot: false };
 
-    // --- ENTITIES ---
+    // --- PLAYER STATS ---
     const player = {
         x: 50, y: 100, width: 16, height: 24,
-        vx: 0, vy: 0, speed: 2, jumpPower: -6,
+        vx: 0, vy: 0, 
+        speed: 2.5,       // Slightly faster for better gap clearing
+        jumpPower: -6.5,  // Slightly higher jump
         grounded: false, facingRight: true,
         hp: 5, maxHp: 5, invulnTimer: 0
     };
@@ -147,28 +141,27 @@
     let lasers = [];
     let enemyLasers = [];
     let enemies = [];
-    
     let boss = null;
 
-    // --- LEVEL DATA (The Frozen Wastes) ---
-    // UPDATED: Exactly 9 rows to fit the canvas height perfectly. Floor is now visible!
+    // --- LEVEL MAP (Desert) ---
+    // Ground is exactly at Row 7. Gaps are now small enough to clear!
     const levelMap = [
         "                                                                                          ",
         "                                                                                          ",
         "                                                                                          ",
         "                                           111                                            ",
         "                        111                                                               ",
-        "                                                     1111           11111                 ",
+        "                                                     111            1111                  ",
         "               111                                                                        ",
-        "111111111111          1111111    1111111111111111          1111111111111111111111111111111",
-        "111111111111          1111111    1111111111111111          1111111111111111111111111111111"
+        "11111111111111  1111111111   111111111111111111  11111111111111111111111111111111111111111",
+        "11111111111111  1111111111   111111111111111111  11111111111111111111111111111111111111111"
     ];
     
     const tileSize = 32;
+    const groundY = 7 * tileSize; // 224
     const levelWidth = levelMap[0].length * tileSize;
     const bossTriggerX = levelWidth - 400;
 
-    // Parse level data into objects
     let platforms = [];
     for (let row = 0; row < levelMap.length; row++) {
         for (let col = 0; col < levelMap[row].length; col++) {
@@ -178,10 +171,10 @@
         }
     }
 
-    // Add some initial enemies
-    enemies.push({ x: 300, y: 192, width: 16, height: 16, vx: -1, startX: 300, patrol: 50, hp: 2 });
-    enemies.push({ x: 700, y: 192, width: 16, height: 16, vx: -1, startX: 700, patrol: 50, hp: 2 });
-    enemies.push({ x: 1200, y: 192, width: 16, height: 16, vx: -1, startX: 1200, patrol: 50, hp: 2 });
+    // Grounded Scorpions (y = 224 ground - 12 height = 212)
+    enemies.push({ x: 300, y: 212, width: 16, height: 12, vx: -1, startX: 300, patrol: 40, hp: 2 });
+    enemies.push({ x: 550, y: 212, width: 16, height: 12, vx: -1, startX: 550, patrol: 40, hp: 2 });
+    enemies.push({ x: 1200, y: 212, width: 16, height: 12, vx: -1, startX: 1200, patrol: 40, hp: 2 });
 
     // --- CONTROLS LOGIC ---
     function setupControls() {
@@ -201,11 +194,10 @@
             e.preventDefault();
             if (gameState === "PLAYING" || gameState === "BOSS") {
                 lasers.push({
-                    // Shoot from the gun barrel
                     x: player.facingRight ? player.x + 18 : player.x - 8,
                     y: player.y + 14, 
                     width: 6, height: 3,
-                    vx: player.facingRight ? 5 : -5
+                    vx: player.facingRight ? 6 : -6
                 });
             } else if (gameState === "GAMEOVER" || gameState === "WIN") {
                 location.reload(); 
@@ -226,14 +218,12 @@
     function updatePlayer() {
         if (player.invulnTimer > 0) player.invulnTimer--;
 
-        // Horizontal Movement
         if (keys.left) { player.vx = -player.speed; player.facingRight = false; }
         else if (keys.right) { player.vx = player.speed; player.facingRight = true; }
         else { player.vx = 0; }
 
         player.x += player.vx;
 
-        // X Collision
         for (let p of platforms) {
             if (checkAABB(player, p)) {
                 if (player.vx > 0) player.x = p.x - player.width;
@@ -241,10 +231,8 @@
             }
         }
 
-        // Keep player from going back past the camera
         if (player.x < cameraX) player.x = cameraX;
 
-        // Vertical Movement (Gravity)
         player.vy += 0.3; 
         if (keys.jump && player.grounded) {
             player.vy = player.jumpPower;
@@ -254,7 +242,6 @@
         player.y += player.vy;
         player.grounded = false;
 
-        // Y Collision
         for (let p of platforms) {
             if (checkAABB(player, p)) {
                 if (player.vy > 0) { 
@@ -268,15 +255,12 @@
             }
         }
 
-        // Death by falling
         if (player.y > canvas.height) takeDamage(5);
 
-        // Camera Follow Logic
         if (gameState === "PLAYING") {
             if (player.x > cameraX + canvas.width / 2) {
                 cameraX = player.x - canvas.width / 2;
             }
-            // Trigger Boss
             if (player.x > bossTriggerX) {
                 gameState = "BOSS";
                 spawnBoss();
@@ -291,11 +275,10 @@
         if (player.hp <= 0) gameState = "GAMEOVER";
     }
 
-    // --- BOSS LOGIC ---
     function spawnBoss() {
         boss = {
-            x: cameraX + 250, y: 192, width: 32, height: 32,
-            hp: 20, maxHp: 20,
+            x: cameraX + 250, y: groundY - 48, width: 32, height: 48,
+            hp: 25, maxHp: 25,
             state: "IDLE", timer: 0
         };
     }
@@ -305,30 +288,26 @@
         boss.timer++;
         
         if (boss.state === "IDLE") {
-            if (boss.timer > 60) {
+            if (boss.timer > 45) {
                 boss.state = "ATTACK";
                 boss.timer = 0;
             }
         } else if (boss.state === "ATTACK") {
-            // Boss jumps up and down while shooting
-            if (boss.timer === 1) boss.vy = -6; 
-            
-            boss.vy += 0.3; // Boss Gravity
+            // Boss shoots spread lasers
+            if (boss.timer === 10 || boss.timer === 30) {
+                enemyLasers.push({ x: boss.x, y: boss.y + 16, width: 8, height: 4, vx: -4 });
+            }
+            if (boss.timer > 60) {
+                boss.state = "JUMP";
+                boss.timer = 0;
+                boss.vy = -5;
+            }
+        } else if (boss.state === "JUMP") {
+            boss.vy += 0.3;
             boss.y += boss.vy;
-            
-            // Floor collision for Boss
-            if (boss.y > 192) {
-                boss.y = 192;
+            if (boss.y > groundY - boss.height) {
+                boss.y = groundY - boss.height;
                 boss.vy = 0;
-            }
-            
-            if (boss.timer % 30 === 0) {
-                enemyLasers.push({
-                    x: boss.x, y: boss.y + 16, width: 8, height: 8, vx: -3
-                });
-            }
-            
-            if (boss.timer > 120) {
                 boss.state = "IDLE";
                 boss.timer = 0;
             }
@@ -337,12 +316,10 @@
         if (checkAABB(player, boss)) takeDamage(1);
     }
 
-    // --- GAME LOOP ---
     function update() {
         if (gameState === "PLAYING" || gameState === "BOSS") {
             updatePlayer();
 
-            // Move Player Lasers
             for (let i = lasers.length - 1; i >= 0; i--) {
                 lasers[i].x += lasers[i].vx;
                 let hit = false;
@@ -370,14 +347,12 @@
                 }
             }
 
-            // Move Enemies
             for (let e of enemies) {
                 e.x += e.vx;
                 if (e.x > e.startX + e.patrol || e.x < e.startX - e.patrol) e.vx *= -1;
                 if (checkAABB(player, e)) takeDamage(1);
             }
 
-            // Move Enemy Lasers
             for (let i = enemyLasers.length - 1; i >= 0; i--) {
                 enemyLasers[i].x += enemyLasers[i].vx;
                 if (checkAABB(player, enemyLasers[i])) {
@@ -390,77 +365,104 @@
         }
     }
 
+    // --- DRAWING FUNCTIONS ---
+    function drawBackground() {
+        ctx.save();
+        
+        // Parallax Mountains
+        ctx.fillStyle = COLOR.dark;
+        let mOffsetX = (cameraX * 0.2) % 320;
+        for(let i = -1; i < 4; i++) {
+            ctx.beginPath();
+            ctx.moveTo(i * 100 - mOffsetX, groundY);
+            ctx.lineTo(i * 100 + 50 - mOffsetX, 100);
+            ctx.lineTo(i * 100 + 100 - mOffsetX, groundY);
+            ctx.fill();
+        }
+
+        // Parallax Cactuses
+        ctx.fillStyle = COLOR.solid;
+        let cOffsetX = (cameraX * 0.5) % 320;
+        for(let i = -1; i < 4; i++) {
+            let cx = i * 150 - cOffsetX + 60;
+            let cy = groundY - 30;
+            ctx.fillRect(cx, cy, 8, 30); // Trunk
+            ctx.fillRect(cx - 6, cy + 8, 6, 4); // Left arm
+            ctx.fillRect(cx - 6, cy + 4, 4, 8);
+            ctx.fillRect(cx + 8, cy + 14, 6, 4); // Right arm
+            ctx.fillRect(cx + 10, cy + 10, 4, 8);
+        }
+        ctx.restore();
+    }
+
     function draw() {
-        // Clear screen
         ctx.fillStyle = COLOR.bg;
         ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        drawBackground();
 
         ctx.save();
         ctx.translate(-cameraX, 0);
 
-        // Draw Platforms
-        ctx.fillStyle = COLOR.dark;
+        // Draw Platforms (Sand blocks)
         for (let p of platforms) {
             if (p.x + p.width > cameraX && p.x < cameraX + canvas.width) {
+                ctx.fillStyle = COLOR.dark;
                 ctx.fillRect(p.x, p.y, p.width, p.height);
                 ctx.fillStyle = COLOR.light;
-                ctx.fillRect(p.x, p.y, p.width, 2); // Snow highlight
-                ctx.fillStyle = COLOR.dark;
+                ctx.fillRect(p.x, p.y, p.width, 4); // Sandy top
             }
         }
 
-        // Draw Cyclops Enemies
+        // Draw Scorpions
         for (let e of enemies) {
-            ctx.fillStyle = COLOR.dark;
-            ctx.fillRect(e.x, e.y, e.width, e.height);
-            // Cyclops Eye
-            ctx.fillStyle = COLOR.lightest;
-            ctx.fillRect(e.x + 4, e.y + 4, 8, 4);
+            let ex = e.x, ey = e.y;
             ctx.fillStyle = COLOR.solid;
-            ctx.fillRect(e.x + 6, e.y + 4, 4, 4);
+            ctx.fillRect(ex + 4, ey + 4, 12, 8); // Body
+            ctx.fillRect(ex, ey + 8, 4, 4); // Claws
+            // Tail
+            ctx.fillRect(ex + 12, ey - 4, 4, 8);
+            ctx.fillRect(ex + 16, ey - 4, 4, 4); 
         }
 
-        // Draw Boss
+        // Draw Boss (Mecha-Cactus)
         if (boss) {
+            let bx = boss.x, by = boss.y;
+            ctx.fillStyle = COLOR.dark;
+            ctx.fillRect(bx, by, boss.width, boss.height);
             ctx.fillStyle = COLOR.solid;
-            ctx.fillRect(boss.x, boss.y, boss.width, boss.height);
+            ctx.fillRect(bx - 8, by + 16, 8, 8); // Gun arm
+            ctx.fillRect(bx + boss.width, by + 8, 8, 16); // Other arm
             ctx.fillStyle = COLOR.bg;
-            ctx.fillRect(boss.x + 8, boss.y + 8, 8, 8);
+            ctx.fillRect(bx + 4, by + 8, 8, 8); // Robotic Eye
         }
 
-        // --- NEW: Draw Space Cowboy Player ---
+        // Draw Player (Space Cowboy)
         if (player.invulnTimer % 4 < 2) {
             let px = player.x;
             let py = player.y;
 
-            // Hat Crown
             ctx.fillStyle = COLOR.solid;
-            ctx.fillRect(px + 2, py, 12, 4);
-            // Hat Brim
-            ctx.fillRect(px - 4, py + 4, 24, 2);
-            // Head/Face
+            ctx.fillRect(px + 2, py, 12, 4); // Hat Crown
+            ctx.fillRect(px - 4, py + 4, 24, 2); // Hat Brim
+            
             ctx.fillStyle = COLOR.bg; 
-            ctx.fillRect(px + 2, py + 6, 12, 6);
-            // Eyes
+            ctx.fillRect(px + 2, py + 6, 12, 6); // Face
+            
             ctx.fillStyle = COLOR.solid; 
-            if (player.facingRight) {
-                ctx.fillRect(px + 10, py + 8, 2, 2);
-            } else {
-                ctx.fillRect(px + 4, py + 8, 2, 2);
-            }
-            // Torso / Poncho
+            if (player.facingRight) ctx.fillRect(px + 10, py + 8, 2, 2); // Eye Right
+            else ctx.fillRect(px + 4, py + 8, 2, 2); // Eye Left
+            
             ctx.fillStyle = COLOR.dark;
-            ctx.fillRect(px, py + 12, 16, 8);
-            // Legs
+            ctx.fillRect(px, py + 12, 16, 8); // Poncho
+            
             ctx.fillStyle = COLOR.solid;
-            ctx.fillRect(px + 2, py + 20, 4, 4);
+            ctx.fillRect(px + 2, py + 20, 4, 4); // Legs
             ctx.fillRect(px + 10, py + 20, 4, 4);
-            // Gun
-            if (player.facingRight) {
-                ctx.fillRect(px + 12, py + 14, 8, 3); 
-            } else {
-                ctx.fillRect(px - 4, py + 14, 8, 3); 
-            }
+            
+            // Blaster
+            if (player.facingRight) ctx.fillRect(px + 12, py + 14, 8, 3); 
+            else ctx.fillRect(px - 4, py + 14, 8, 3); 
         }
 
         // Draw Lasers
@@ -470,12 +472,11 @@
 
         ctx.restore();
 
-        // Draw UI
+        // UI
         ctx.fillStyle = COLOR.solid;
         ctx.font = "16px monospace";
         ctx.fillText("HP: " + "█".repeat(player.hp), 10, 20);
 
-        // State Overlays
         if (gameState === "BOSS") {
             ctx.fillText("BOSS: " + "█".repeat(Math.ceil(boss.hp/2)), canvas.width / 2 - 80, 20);
         } else if (gameState === "GAMEOVER") {
@@ -499,10 +500,8 @@
         requestAnimationFrame(loop);
     }
 
-    // Start
     setupControls();
     loop();
-
 </script>
 </body>
 </html>
