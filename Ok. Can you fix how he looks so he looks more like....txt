@@ -1,0 +1,556 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Space Bounty Hunter</title>
+<style>
+ body { 
+   margin: 0; display: flex; justify-content: center; align-items: center; 
+   height: 100vh; background-color: #222; font-family: monospace; touch-action: none; 
+   user-select: none; overflow: hidden;
+ }
+ 
+ /* Redesigned for more real estate (Horizontal Handheld Style) */
+ #gameboy { 
+   background: #e0e0e0; padding: 20px; 
+   border-radius: 40px; box-shadow: 0 15px 30px rgba(0,0,0,0.7); 
+   display: flex; align-items: center; justify-content: space-between;
+   width: 95vw; max-width: 1200px; box-sizing: border-box;
+ }
+ 
+ #screen-container { 
+   background: #333; padding: 20px; 
+   border-radius: 15px 15px 35px 15px; 
+   flex-grow: 1; margin: 0 30px; position: relative;
+   box-shadow: inset 0 0 10px rgba(0,0,0,0.8);
+ }
+ 
+ canvas { 
+   display: block; width: 100%; aspect-ratio: 21/9; border-radius: 5px;
+   box-shadow: inset 0 0 15px rgba(0,0,0,1); background: #000;
+ }
+ 
+ .controls-left, .controls-right { 
+   width: 160px; display: flex; justify-content: center; align-items: center; 
+ }
+
+ /* True Cross D-Pad */
+ .d-pad { 
+   position: relative; width: 120px; height: 120px; 
+ }
+ .d-pad-vertical {
+   position: absolute; background: #222; width: 40px; height: 120px; 
+   left: 40px; top: 0; border-radius: 5px;
+   box-shadow: inset -2px -2px 5px rgba(0,0,0,0.5), inset 2px 2px 5px rgba(255,255,255,0.1);
+ }
+ .d-pad-horizontal {
+   position: absolute; background: #222; width: 120px; height: 40px; 
+   left: 0; top: 40px; border-radius: 5px;
+   box-shadow: inset -2px -2px 5px rgba(0,0,0,0.5), inset 2px 2px 5px rgba(255,255,255,0.1);
+ }
+ .d-pad-center {
+   position: absolute; background: #222; width: 40px; height: 40px;
+   left: 40px; top: 40px; z-index: 5;
+ }
+ .btn-dir { 
+   position: absolute; width: 40px; height: 40px; z-index: 10; cursor: pointer;
+ }
+ .btn-dir:active ~ .d-pad-center, .btn-dir:active ~ .d-pad-vertical, .btn-dir:active ~ .d-pad-horizontal { 
+   background: #111; 
+ }
+ #btn-up { top: 0; left: 40px; }
+ #btn-down { top: 80px; left: 40px; }
+ #btn-left { top: 40px; left: 0; }
+ #btn-right { top: 40px; left: 80px; }
+ 
+ /* Action Buttons */
+ .action-buttons { 
+   display: flex; gap: 20px; transform: rotate(-20deg); 
+ }
+ .btn-action { 
+   background: #b00; width: 55px; height: 55px; border-radius: 50%; 
+   box-shadow: 2px 4px 6px rgba(0,0,0,0.4); color: #e0e0e0; 
+   display: flex; justify-content: center; align-items: flex-end; 
+   font-weight: bold; font-size: 18px; padding-bottom: 10px; box-sizing: border-box; 
+   cursor: pointer;
+ }
+ .btn-action:active { 
+   background: #800; box-shadow: inset 2px 4px 6px rgba(0,0,0,0.6); transform: translateY(2px);
+ }
+ 
+ #ui-top { 
+   display: flex; justify-content: space-between; font-size: 16px; 
+   margin-bottom: 15px; color: #aaa; font-weight: bold; letter-spacing: 1px;
+ }
+ 
+ #start-overlay {
+   position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+   display: flex; justify-content: center; align-items: center; flex-direction: column;
+   color: #fff; font-size: 24px; background: rgba(0,0,0,0.7);
+   border-radius: 15px 15px 35px 15px; pointer-events: none; z-index: 20;
+ }
+ .blink { animation: blinker 1.5s linear infinite; font-size: 16px; margin-top: 10px; color: #0ff;}
+ @keyframes blinker { 50% { opacity: 0; } }
+
+ @media (max-width: 800px) {
+   #gameboy { flex-direction: column; padding: 10px; border-radius: 20px; width: 100vw; height: 100vh; justify-content: center; }
+   #screen-container { width: 90%; margin: 10px 0; }
+   .controls-left, .controls-right { width: 100%; padding: 20px 0; justify-content: space-around; }
+   .controls-left { order: 2; }
+   .controls-right { order: 3; justify-content: space-evenly; width: 80%; }
+ }
+</style>
+</head>
+<body>
+
+<div id="gameboy">
+ <div class="controls-left">
+   <div class="d-pad">
+     <!-- Hidden buttons for click targets -->
+     <div class="btn-dir" id="btn-up"></div>
+     <div class="btn-dir" id="btn-down"></div>
+     <div class="btn-dir" id="btn-left"></div>
+     <div class="btn-dir" id="btn-right"></div>
+     <!-- Visual cross -->
+     <div class="d-pad-vertical"></div>
+     <div class="d-pad-horizontal"></div>
+     <div class="d-pad-center"></div>
+   </div>
+ </div>
+
+ <div id="screen-container">
+   <div id="ui-top">
+     <span id="score-display">DISTANCE: 0</span>
+     <span id="theme-display">ZONE: UNKNOWN</span>
+   </div>
+   <!-- Increased internal resolution for more real estate -->
+   <canvas id="gameCanvas" width="840" height="360"></canvas>
+   <div id="start-overlay">
+     <div>SPACE BOUNTY HUNTER</div>
+     <div class="blink">TAP SCREEN OR BUTTON TO START</div>
+   </div>
+ </div>
+ 
+ <div class="controls-right">
+   <div class="action-buttons">
+     <div class="btn-action" id="btn-b">B</div>
+     <div class="btn-action" id="btn-a">A</div>
+   </div>
+ </div>
+</div>
+
+<script>
+ const canvas = document.getElementById('gameCanvas');
+ const ctx = canvas.getContext('2d');
+ const scoreDisplay = document.getElementById('score-display');
+ const themeDisplay = document.getElementById('theme-display');
+ const startOverlay = document.getElementById('start-overlay');
+
+ // --- Audio System ---
+ let audioCtx;
+ let musicInterval;
+ 
+ function initAudio() {
+   if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+   if (audioCtx.state === 'suspended') audioCtx.resume();
+ }
+
+ function playSFX(type) {
+   if (!audioCtx) return;
+   const osc = audioCtx.createOscillator();
+   const gain = audioCtx.createGain();
+   osc.connect(gain);
+   gain.connect(audioCtx.destination);
+   
+   if (type === 'shoot') {
+     osc.type = 'square';
+     osc.frequency.setValueAtTime(800, audioCtx.currentTime);
+     osc.frequency.exponentialRampToValueAtTime(100, audioCtx.currentTime + 0.1);
+     gain.gain.setValueAtTime(0.05, audioCtx.currentTime);
+     osc.start(); osc.stop(audioCtx.currentTime + 0.1);
+   } else if (type === 'jump') {
+     osc.type = 'square';
+     osc.frequency.setValueAtTime(150, audioCtx.currentTime);
+     osc.frequency.linearRampToValueAtTime(400, audioCtx.currentTime + 0.15);
+     gain.gain.setValueAtTime(0.05, audioCtx.currentTime);
+     osc.start(); osc.stop(audioCtx.currentTime + 0.15);
+   } else if (type === 'explosion') {
+     osc.type = 'sawtooth';
+     osc.frequency.setValueAtTime(100, audioCtx.currentTime);
+     osc.frequency.exponentialRampToValueAtTime(10, audioCtx.currentTime + 0.3);
+     gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
+     osc.start(); osc.stop(audioCtx.currentTime + 0.3);
+   }
+ }
+
+ // 8-bit Hair Metal Arpeggios (4 tracks)
+ const tracks = [
+   [220, 277, 330, 440, 330, 277, 220, 165], 
+   [330, 392, 440, 523, 440, 392, 330, 261], 
+   [110, 110, 147, 165, 110, 110, 165, 147], 
+   [440, 415, 392, 349, 330, 294, 277, 261]  
+ ];
+
+ function playMusic() {
+   if (!audioCtx) return;
+   if (musicInterval) clearInterval(musicInterval);
+   
+   let trackIdx = Math.floor(Math.random() * tracks.length);
+   let noteIdx = 0;
+   
+   musicInterval = setInterval(() => {
+     if (gameOver) return;
+     const osc = audioCtx.createOscillator();
+     const gain = audioCtx.createGain();
+     osc.type = 'square';
+     osc.frequency.value = tracks[trackIdx][noteIdx];
+     osc.connect(gain);
+     gain.connect(audioCtx.destination);
+     gain.gain.setValueAtTime(0.02, audioCtx.currentTime);
+     gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.1);
+     osc.start();
+     osc.stop(audioCtx.currentTime + 0.1);
+     noteIdx = (noteIdx + 1) % tracks[trackIdx].length;
+   }, 120); // Steady tempo
+ }
+
+ // --- Game Engine ---
+ // Player now larger and better proportioned
+ let p = { x: 80, y: 200, w: 26, h: 44, vx: 0, vy: 0, speed: 3, jump: -8, grounded: false };
+ let groundY = 300; 
+ let keys = { left: false, right: false };
+ let lasers = [];
+ let enemies = [];
+ let obstacles = [];
+ let particles = [];
+ let distance = 0;
+ let bgScrollOffset = 0; // Tracks ground scrolling smoothly
+ let frameCount = 0;
+ let gameOver = false;
+ let gameStarted = false;
+ let themeIdx = 0;
+ 
+ const themes = [
+   { name: 'Desert', bg: '#e0cda7', ground: '#d38b5d', obstacle: '#a65021' },
+   { name: 'Ice Mountain', bg: '#d0e8f2', ground: '#79a3b1', obstacle: '#456268' },
+   { name: 'Volcano', bg: '#4a1c40', ground: '#390623', obstacle: '#bd1b21' },
+   { name: 'Jungle', bg: '#7b9a74', ground: '#3e5c3e', obstacle: '#213921' }
+ ];
+
+ function startGame() {
+   initAudio();
+   p.x = 80; p.y = 200; p.vx = 0; p.vy = 0;
+   lasers = []; enemies = []; obstacles = []; particles = [];
+   distance = 0; bgScrollOffset = 0; frameCount = 0; gameOver = false; gameStarted = true;
+   startOverlay.style.display = 'none';
+   
+   themeIdx = Math.floor(Math.random() * themes.length);
+   playMusic();
+   requestAnimationFrame(gameLoop);
+ }
+
+ // Input Handling
+ const bindInput = (id, action, type) => {
+   const el = document.getElementById(id);
+   const trigger = (val) => {
+     if(!gameStarted && val) return startGame();
+     if(gameOver && val) return startGame();
+     
+     if(type === 'move') keys[action] = val;
+     if(type === 'action' && val) handleAction(action);
+   };
+   if(el) {
+     el.addEventListener('mousedown', (e) => { e.preventDefault(); trigger(true); });
+     el.addEventListener('touchstart', (e) => { e.preventDefault(); trigger(true); });
+     el.addEventListener('mouseup', (e) => { e.preventDefault(); trigger(false); });
+     el.addEventListener('touchend', (e) => { e.preventDefault(); trigger(false); });
+     el.addEventListener('mouseleave', (e) => { e.preventDefault(); trigger(false); });
+   }
+ };
+
+ bindInput('btn-left', 'left', 'move');
+ bindInput('btn-right', 'right', 'move');
+ bindInput('btn-a', 'shoot', 'action');
+ bindInput('btn-b', 'jump', 'action');
+ canvas.addEventListener('click', () => { if(!gameStarted || gameOver) startGame(); });
+
+ window.addEventListener('keydown', (e) => {
+   if(!gameStarted || gameOver) return startGame();
+   if(e.code === 'ArrowLeft') keys.left = true;
+   if(e.code === 'ArrowRight') keys.right = true;
+   if(e.code === 'KeyX' && !e.repeat) handleAction('shoot'); // X maps to A
+   if((e.code === 'KeyZ' || e.code === 'Space') && !e.repeat) handleAction('jump'); // Z maps to B
+ });
+ window.addEventListener('keyup', (e) => {
+   if(e.code === 'ArrowLeft') keys.left = false;
+   if(e.code === 'ArrowRight') keys.right = false;
+ });
+
+ function handleAction(action) {
+   if (action === 'jump' && p.grounded) {
+     p.vy = p.jump;
+     p.grounded = false;
+     playSFX('jump');
+   }
+   if (action === 'shoot') {
+     // Spawn laser from the gun barrel
+     lasers.push({ x: p.x + p.w + 6, y: p.y + 19, w: 16, h: 4, vx: 12 });
+     playSFX('shoot');
+   }
+ }
+
+ function spawnEntities() {
+   // 1/4 SPEED: Scaled down spawn rates significantly
+   let spawnRate = Math.max(0.003, 0.01 - (distance / 50000));
+   
+   if (Math.random() < spawnRate) {
+     // Obstacles
+     obstacles.push({ x: canvas.width + 20, y: groundY - 30, w: 30, h: 30 });
+   } else if (Math.random() < spawnRate * 1.5) {
+     // Hovering enemies
+     enemies.push({ x: canvas.width + 20, y: groundY - 100 - Math.random() * 60, w: 30, h: 30, vx: -1 });
+   }
+ }
+
+ function spawnParticles(x, y, color) {
+   for(let i=0; i<20; i++) {
+     particles.push({
+       x: x, y: y, 
+       vx: (Math.random() - 0.5) * 10, 
+       vy: (Math.random() - 0.5) * 10, 
+       life: 25, color: color
+     });
+   }
+ }
+
+ function checkCollision(r1, r2) {
+   return !(r2.x > r1.x + r1.w || r2.x + r2.w < r1.x || r2.y > r1.y + r1.h || r2.y + r2.h < r1.y);
+ }
+
+ function update() {
+   frameCount++;
+   // 1/4 SPEED: Slower distance accumulation
+   distance += 0.025; 
+   
+   if (frameCount % 1200 === 0) {
+     themeIdx = Math.floor(Math.random() * themes.length);
+     playMusic(); 
+   }
+
+   scoreDisplay.innerText = `DISTANCE: ${Math.floor(distance)}m`;
+   themeDisplay.innerText = `ZONE: ${themes[themeIdx].name.toUpperCase()}`;
+
+   // Player X
+   if (keys.left) p.vx = -p.speed;
+   else if (keys.right) p.vx = p.speed;
+   else p.vx = 0;
+   
+   p.x += p.vx;
+   if (p.x < 10) p.x = 10;
+   if (p.x > canvas.width - p.w - 10) p.x = canvas.width - p.w - 10;
+
+   // Player Y (Gravity)
+   // 1/4 SPEED: Floatier gravity to match slower world
+   p.vy += 0.3; 
+   p.y += p.vy;
+   
+   let floorLevel = groundY - p.h;
+   if (p.y >= floorLevel) {
+     p.y = floorLevel;
+     p.vy = 0;
+     p.grounded = true;
+   }
+
+   spawnEntities();
+   
+   // 1/4 SPEED: Base scroll speed reduced from 4 to 1
+   let scrollSpeed = 1 + (distance / 1000); 
+   bgScrollOffset += scrollSpeed;
+
+   // Lasers
+   for (let i = lasers.length - 1; i >= 0; i--) {
+     lasers[i].x += lasers[i].vx;
+     if (lasers[i].x > canvas.width + 50) lasers.splice(i, 1);
+   }
+
+   // Obstacles
+   for (let i = obstacles.length - 1; i >= 0; i--) {
+     let o = obstacles[i];
+     o.x -= scrollSpeed;
+     if (checkCollision(p, o)) triggerGameOver();
+     if (o.x < -50) obstacles.splice(i, 1);
+   }
+
+   // Enemies
+   for (let i = enemies.length - 1; i >= 0; i--) {
+     let e = enemies[i];
+     e.x += e.vx - scrollSpeed;
+     
+     if (checkCollision(p, e)) triggerGameOver();
+     
+     let destroyed = false;
+     for (let j = lasers.length - 1; j >= 0; j--) {
+       if (checkCollision(lasers[j], e)) {
+         lasers.splice(j, 1);
+         spawnParticles(e.x + 15, e.y + 15, '#ff00ff');
+         playSFX('explosion');
+         destroyed = true;
+         distance += 2; // Bonus
+         break;
+       }
+     }
+     
+     if (destroyed) {
+       enemies.splice(i, 1);
+     } else if (e.x < -50) {
+       enemies.splice(i, 1);
+     }
+   }
+
+   // Particles
+   for (let i = particles.length - 1; i >= 0; i--) {
+     let pt = particles[i];
+     pt.x += pt.vx; pt.y += pt.vy; pt.life--;
+     if (pt.life <= 0) particles.splice(i, 1);
+   }
+ }
+
+ function triggerGameOver() {
+   gameOver = true;
+   playSFX('explosion');
+   if (musicInterval) clearInterval(musicInterval);
+ }
+
+ function draw() {
+   let t = themes[themeIdx];
+   
+   // Background
+   ctx.fillStyle = t.bg;
+   ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+   // Scenery detail (Moon/Sun) - scales horizontally
+   ctx.fillStyle = t.obstacle + '40';
+   ctx.beginPath(); ctx.arc(canvas.width - 150, 80, 60, 0, Math.PI * 2); ctx.fill();
+
+   // Ground
+   ctx.fillStyle = t.ground;
+   ctx.fillRect(0, groundY, canvas.width, canvas.height - groundY);
+   
+   // Ground texture lines (scrolling effect)
+   ctx.fillStyle = t.obstacle + '80';
+   for(let i=0; i< (canvas.width / 80) + 2; i++) {
+     let lineX = (i * 80 - (bgScrollOffset) % 80);
+     ctx.fillRect(lineX, groundY + 15, 20, 6);
+     ctx.fillRect(lineX + 40, groundY + 35, 15, 6);
+   }
+
+   // Draw Player (Humanized Design)
+   // Cowboy Hat
+   ctx.fillStyle = '#8b5a2b';
+   ctx.fillRect(p.x - 6, p.y - 6, p.w + 12, 6); // Brim
+   ctx.fillRect(p.x + 4, p.y - 18, p.w - 8, 12); // Top
+
+   // Head (Skin tone)
+   ctx.fillStyle = '#ffccaa';
+   ctx.fillRect(p.x + 4, p.y, 18, 14);
+
+   // Eye / Tech Visor
+   ctx.fillStyle = '#0ff';
+   ctx.fillRect(p.x + 14, p.y + 4, 8, 4);
+
+   // Torso (Space Armor)
+   ctx.fillStyle = '#4455aa';
+   ctx.fillRect(p.x + 2, p.y + 14, 22, 18);
+   // Armor details
+   ctx.fillStyle = '#7788dd';
+   ctx.fillRect(p.x + 8, p.y + 16, 10, 10);
+
+   // Arm holding laser
+   ctx.fillStyle = '#ffccaa';
+   ctx.fillRect(p.x + 8, p.y + 18, 16, 6);
+
+   // Gun
+   ctx.fillStyle = '#333';
+   ctx.fillRect(p.x + 24, p.y + 16, 14, 8);
+   // Gun barrel detail
+   ctx.fillStyle = '#888';
+   ctx.fillRect(p.x + 38, p.y + 18, 4, 4);
+
+   // Legs (Animated based on frame and grounded state)
+   ctx.fillStyle = '#223388';
+   if (!p.grounded) {
+     // Jumping pose
+     ctx.fillRect(p.x + 4, p.y + 32, 8, 10); // Left leg up
+     ctx.fillRect(p.x + 14, p.y + 32, 8, 14); // Right leg down
+   } else if (Math.floor(frameCount / 15) % 2 === 0 && p.vx !== 0) {
+     // Running pose A
+     ctx.fillRect(p.x + 2, p.y + 32, 8, 12); 
+     ctx.fillRect(p.x + 16, p.y + 32, 8, 12); 
+   } else {
+     // Standing / Running pose B
+     ctx.fillRect(p.x + 6, p.y + 32, 6, 12);
+     ctx.fillRect(p.x + 14, p.y + 32, 6, 12);
+   }
+
+   // Lasers
+   ctx.fillStyle = '#0ff';
+   for (let l of lasers) {
+     ctx.fillRect(l.x, l.y, l.w, l.h);
+     ctx.fillStyle = '#fff';
+     ctx.fillRect(l.x + l.w - 4, l.y, 4, l.h); // Core of laser
+     ctx.fillStyle = '#0ff';
+   }
+
+   // Obstacles
+   ctx.fillStyle = t.obstacle;
+   for (let o of obstacles) {
+     ctx.fillRect(o.x, o.y, o.w, o.h);
+     ctx.fillStyle = '#111'; // Inner texture
+     ctx.fillRect(o.x + 6, o.y + 6, o.w - 12, o.h - 12);
+     ctx.fillStyle = t.obstacle;
+   }
+
+   // Enemies (Alien ships)
+   for (let e of enemies) {
+     ctx.fillStyle = '#ff00ff';
+     ctx.fillRect(e.x, e.y, e.w, e.h);
+     ctx.fillStyle = '#fff'; // Eye
+     ctx.fillRect(e.x + 6, e.y + 8, 12, 6);
+     ctx.fillStyle = '#0ff'; // Thruster
+     ctx.fillRect(e.x + e.w, e.y + 12, 6, 6);
+   }
+
+   // Particles
+   for (let pt of particles) {
+     ctx.fillStyle = pt.color;
+     ctx.fillRect(pt.x, pt.y, 4, 4);
+   }
+
+   // Game Over Overlay
+   if (gameOver) {
+     ctx.fillStyle = 'rgba(0,0,0,0.85)';
+     ctx.fillRect(0, 0, canvas.width, canvas.height);
+     ctx.fillStyle = '#fff';
+     ctx.textAlign = 'center';
+     ctx.font = 'bold 32px monospace';
+     ctx.fillText('GAME OVER', canvas.width/2, canvas.height/2 - 20);
+     ctx.font = '18px monospace';
+     ctx.fillStyle = '#0ff';
+     ctx.fillText('Tap/Click or Press Button to Restart', canvas.width/2, canvas.height/2 + 30);
+     ctx.textAlign = 'left';
+   }
+ }
+
+ function gameLoop() {
+   if (!gameOver) update();
+   draw();
+   if (gameStarted) requestAnimationFrame(gameLoop);
+ }
+
+ // Initial draw before start
+ draw();
+
+</script>
+</body>
+</html>
