@@ -1,0 +1,447 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Space Bounty Hunter</title>
+<style>
+ body { 
+   margin: 0; display: flex; justify-content: center; align-items: center; 
+   height: 100vh; background-color: #222; font-family: monospace; touch-action: none; 
+   user-select: none;
+ }
+ #gameboy { 
+   background: #e0e0e0; padding: 20px 20px 40px; 
+   border-radius: 10px 10px 40px 10px; box-shadow: 0 10px 20px rgba(0,0,0,0.5); 
+   width: 400px; 
+ }
+ #screen-container { 
+   background: #555; padding: 15px 15px 40px; 
+   border-radius: 10px 10px 30px 10px; margin-bottom: 20px; position: relative;
+ }
+ canvas { 
+   display: block; width: 100%; border-radius: 3px;
+   box-shadow: inset 0 0 10px rgba(0,0,0,0.5);
+ }
+ #controls { 
+   display: flex; justify-content: space-between; align-items: center; padding: 0 10px; 
+ }
+ .d-pad { 
+   position: relative; width: 90px; height: 90px; 
+ }
+ .btn-dir { 
+   position: absolute; background: #222; width: 30px; height: 30px; border-radius: 3px; cursor: pointer;
+ }
+ .btn-dir:active { background: #000; }
+ #btn-left { top: 30px; left: 0; }
+ #btn-right { top: 30px; left: 60px; }
+ 
+ .action-buttons { 
+   display: flex; gap: 15px; transform: rotate(-15deg); 
+ }
+ .btn-action { 
+   background: #a00; width: 45px; height: 45px; border-radius: 50%; 
+   box-shadow: 2px 2px 5px rgba(0,0,0,0.3); color: #e0e0e0; 
+   display: flex; justify-content: center; align-items: flex-end; 
+   font-weight: bold; font-size: 14px; padding-bottom: 5px; box-sizing: border-box; 
+   cursor: pointer;
+ }
+ .btn-action:active { background: #800; box-shadow: inset 2px 2px 5px rgba(0,0,0,0.5); }
+ 
+ #ui-top { 
+   display: flex; justify-content: space-between; font-size: 14px; 
+   margin-bottom: 10px; color: #111; font-weight: bold;
+ }
+ #start-overlay {
+   position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+   display: flex; justify-content: center; align-items: center;
+   color: #fff; font-size: 16px; background: rgba(0,0,0,0.7);
+   border-radius: 10px 10px 30px 10px; pointer-events: none;
+ }
+</style>
+</head>
+<body>
+
+<div id="gameboy">
+ <div id="ui-top">
+   <span id="score-display">Distance: 0</span>
+   <span id="theme-display">Zone: Unknown</span>
+ </div>
+ 
+ <div id="screen-container">
+   <canvas id="gameCanvas" width="400" height="240"></canvas>
+   <div id="start-overlay">TAP SCREEN TO START</div>
+ </div>
+ 
+ <div id="controls">
+   <div class="d-pad">
+     <div class="btn-dir" id="btn-left"></div>
+     <div class="btn-dir" id="btn-right"></div>
+   </div>
+   <div class="action-buttons">
+     <div class="btn-action" id="btn-b">B</div>
+     <div class="btn-action" id="btn-a">A</div>
+   </div>
+ </div>
+</div>
+
+<script>
+ const canvas = document.getElementById('gameCanvas');
+ const ctx = canvas.getContext('2d');
+ const scoreDisplay = document.getElementById('score-display');
+ const themeDisplay = document.getElementById('theme-display');
+ const startOverlay = document.getElementById('start-overlay');
+
+ // --- Audio System (Web Audio API Synth) ---
+ let audioCtx;
+ let musicInterval;
+ 
+ function initAudio() {
+   if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+   if (audioCtx.state === 'suspended') audioCtx.resume();
+ }
+
+ function playSFX(type) {
+   if (!audioCtx) return;
+   const osc = audioCtx.createOscillator();
+   const gain = audioCtx.createGain();
+   osc.connect(gain);
+   gain.connect(audioCtx.destination);
+   
+   if (type === 'shoot') {
+     osc.type = 'square';
+     osc.frequency.setValueAtTime(800, audioCtx.currentTime);
+     osc.frequency.exponentialRampToValueAtTime(100, audioCtx.currentTime + 0.1);
+     gain.gain.setValueAtTime(0.05, audioCtx.currentTime);
+     osc.start(); osc.stop(audioCtx.currentTime + 0.1);
+   } else if (type === 'jump') {
+     osc.type = 'square';
+     osc.frequency.setValueAtTime(150, audioCtx.currentTime);
+     osc.frequency.linearRampToValueAtTime(400, audioCtx.currentTime + 0.15);
+     gain.gain.setValueAtTime(0.05, audioCtx.currentTime);
+     osc.start(); osc.stop(audioCtx.currentTime + 0.15);
+   } else if (type === 'explosion') {
+     osc.type = 'sawtooth';
+     osc.frequency.setValueAtTime(100, audioCtx.currentTime);
+     osc.frequency.exponentialRampToValueAtTime(10, audioCtx.currentTime + 0.3);
+     gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
+     osc.start(); osc.stop(audioCtx.currentTime + 0.3);
+   }
+ }
+
+ // 8-bit Hair Metal Arpeggios (4 tracks)
+ const tracks = [
+   [220, 277, 330, 440, 330, 277, 220, 165], // Track 1: Fast ascending/descending
+   [330, 392, 440, 523, 440, 392, 330, 261], // Track 2: Power chord feel
+   [110, 110, 147, 165, 110, 110, 165, 147], // Track 3: Chugging bassline
+   [440, 415, 392, 349, 330, 294, 277, 261]  // Track 4: Shredding descent
+ ];
+
+ function playMusic() {
+   if (!audioCtx) return;
+   if (musicInterval) clearInterval(musicInterval);
+   
+   let trackIdx = Math.floor(Math.random() * tracks.length);
+   let noteIdx = 0;
+   
+   musicInterval = setInterval(() => {
+     if (gameOver) return;
+     const osc = audioCtx.createOscillator();
+     const gain = audioCtx.createGain();
+     osc.type = 'square';
+     osc.frequency.value = tracks[trackIdx][noteIdx];
+     osc.connect(gain);
+     gain.connect(audioCtx.destination);
+     gain.gain.setValueAtTime(0.02, audioCtx.currentTime);
+     gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.1);
+     osc.start();
+     osc.stop(audioCtx.currentTime + 0.1);
+     noteIdx = (noteIdx + 1) % tracks[trackIdx].length;
+   }, 120);
+ }
+
+ // --- Game Engine ---
+ let p = { x: 50, y: 150, w: 20, h: 30, vx: 0, vy: 0, speed: 4, jump: -10, grounded: false };
+ let keys = { left: false, right: false };
+ let lasers = [];
+ let enemies = [];
+ let obstacles = [];
+ let particles = [];
+ let distance = 0;
+ let frameCount = 0;
+ let gameOver = false;
+ let gameStarted = false;
+ let themeIdx = 0;
+ 
+ const themes = [
+   { name: 'Desert', bg: '#e0cda7', ground: '#d38b5d', obstacle: '#a65021' },
+   { name: 'Ice Mountain', bg: '#d0e8f2', ground: '#79a3b1', obstacle: '#456268' },
+   { name: 'Volcano', bg: '#4a1c40', ground: '#390623', obstacle: '#bd1b21' },
+   { name: 'Jungle', bg: '#7b9a74', ground: '#3e5c3e', obstacle: '#213921' }
+ ];
+
+ function startGame() {
+   initAudio();
+   p.x = 50; p.y = 150; p.vx = 0; p.vy = 0;
+   lasers = []; enemies = []; obstacles = []; particles = [];
+   distance = 0; frameCount = 0; gameOver = false; gameStarted = true;
+   startOverlay.style.display = 'none';
+   
+   // Pick random starting theme
+   themeIdx = Math.floor(Math.random() * themes.length);
+   playMusic();
+   requestAnimationFrame(gameLoop);
+ }
+
+ // Input Handling
+ const bindInput = (id, action, type) => {
+   const el = document.getElementById(id);
+   const trigger = (val) => {
+     if(!gameStarted && val) return startGame();
+     if(gameOver && val) return startGame();
+     
+     if(type === 'move') keys[action] = val;
+     if(type === 'action' && val) handleAction(action);
+   };
+   el.addEventListener('mousedown', (e) => { e.preventDefault(); trigger(true); });
+   el.addEventListener('touchstart', (e) => { e.preventDefault(); trigger(true); });
+   el.addEventListener('mouseup', (e) => { e.preventDefault(); trigger(false); });
+   el.addEventListener('touchend', (e) => { e.preventDefault(); trigger(false); });
+   el.addEventListener('mouseleave', (e) => { e.preventDefault(); trigger(false); });
+ };
+
+ bindInput('btn-left', 'left', 'move');
+ bindInput('btn-right', 'right', 'move');
+ bindInput('btn-a', 'shoot', 'action');
+ bindInput('btn-b', 'jump', 'action');
+ canvas.addEventListener('click', () => { if(!gameStarted || gameOver) startGame(); });
+
+ window.addEventListener('keydown', (e) => {
+   if(!gameStarted || gameOver) return startGame();
+   if(e.code === 'ArrowLeft') keys.left = true;
+   if(e.code === 'ArrowRight') keys.right = true;
+   if(e.code === 'KeyX' && !e.repeat) handleAction('shoot'); // X maps to A
+   if((e.code === 'KeyZ' || e.code === 'Space') && !e.repeat) handleAction('jump'); // Z maps to B
+ });
+ window.addEventListener('keyup', (e) => {
+   if(e.code === 'ArrowLeft') keys.left = false;
+   if(e.code === 'ArrowRight') keys.right = false;
+ });
+
+ function handleAction(action) {
+   if (action === 'jump' && p.grounded) {
+     p.vy = p.jump;
+     p.grounded = false;
+     playSFX('jump');
+   }
+   if (action === 'shoot') {
+     lasers.push({ x: p.x + p.w, y: p.y + 12, w: 12, h: 4, vx: 8 });
+     playSFX('shoot');
+   }
+ }
+
+ function spawnEntities() {
+   // Increase difficulty over time
+   let spawnRate = Math.max(0.01, 0.03 - (distance / 50000));
+   
+   if (Math.random() < spawnRate) {
+     obstacles.push({ x: 420, y: 180, w: 20, h: 20 });
+   } else if (Math.random() < spawnRate * 1.5) {
+     // Hovering enemies
+     enemies.push({ x: 420, y: 130 + Math.random() * 40, w: 20, h: 20, vx: -2 });
+   }
+ }
+
+ function spawnParticles(x, y, color) {
+   for(let i=0; i<15; i++) {
+     particles.push({
+       x: x, y: y, 
+       vx: (Math.random() - 0.5) * 8, 
+       vy: (Math.random() - 0.5) * 8, 
+       life: 20, color: color
+     });
+   }
+ }
+
+ function checkCollision(r1, r2) {
+   return !(r2.x > r1.x + r1.w || r2.x + r2.w < r1.x || r2.y > r1.y + r1.h || r2.y + r2.h < r1.y);
+ }
+
+ function update() {
+   frameCount++;
+   distance += 0.1;
+   
+   // Theme cycling
+   if (frameCount % 800 === 0) {
+     themeIdx = Math.floor(Math.random() * themes.length);
+     playMusic(); // Changes the hair metal track based on random theme trigger
+   }
+
+   scoreDisplay.innerText = `Distance: ${Math.floor(distance)}m`;
+   themeDisplay.innerText = `Zone: ${themes[themeIdx].name}`;
+
+   // Player X
+   if (keys.left) p.vx = -p.speed;
+   else if (keys.right) p.vx = p.speed;
+   else p.vx = 0;
+   
+   p.x += p.vx;
+   if (p.x < 0) p.x = 0;
+   if (p.x > 380) p.x = 380;
+
+   // Player Y (Gravity)
+   p.vy += 0.6; 
+   p.y += p.vy;
+   if (p.y >= 170) {
+     p.y = 170;
+     p.vy = 0;
+     p.grounded = true;
+   }
+
+   spawnEntities();
+   let scrollSpeed = 4 + (distance / 500); // World speeds up
+
+   // Lasers
+   for (let i = lasers.length - 1; i >= 0; i--) {
+     lasers[i].x += lasers[i].vx;
+     if (lasers[i].x > 400) lasers.splice(i, 1);
+   }
+
+   // Obstacles
+   for (let i = obstacles.length - 1; i >= 0; i--) {
+     let o = obstacles[i];
+     o.x -= scrollSpeed;
+     if (checkCollision(p, o)) triggerGameOver();
+     if (o.x < -30) obstacles.splice(i, 1);
+   }
+
+   // Enemies
+   for (let i = enemies.length - 1; i >= 0; i--) {
+     let e = enemies[i];
+     e.x += e.vx - scrollSpeed;
+     
+     if (checkCollision(p, e)) triggerGameOver();
+     
+     let destroyed = false;
+     for (let j = lasers.length - 1; j >= 0; j--) {
+       if (checkCollision(lasers[j], e)) {
+         lasers.splice(j, 1);
+         spawnParticles(e.x + 10, e.y + 10, '#ff00ff');
+         playSFX('explosion');
+         destroyed = true;
+         distance += 5; // Bonus score
+         break;
+       }
+     }
+     
+     if (destroyed) {
+       enemies.splice(i, 1);
+     } else if (e.x < -30) {
+       enemies.splice(i, 1);
+     }
+   }
+
+   // Particles
+   for (let i = particles.length - 1; i >= 0; i--) {
+     let pt = particles[i];
+     pt.x += pt.vx; pt.y += pt.vy; pt.life--;
+     if (pt.life <= 0) particles.splice(i, 1);
+   }
+ }
+
+ function triggerGameOver() {
+   gameOver = true;
+   playSFX('explosion');
+   if (musicInterval) clearInterval(musicInterval);
+ }
+
+ function draw() {
+   let t = themes[themeIdx];
+   
+   // Background
+   ctx.fillStyle = t.bg;
+   ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+   // Scenery detail (Moon/Sun)
+   ctx.fillStyle = t.obstacle + '40';
+   ctx.beginPath(); ctx.arc(320, 60, 40, 0, Math.PI * 2); ctx.fill();
+
+   // Ground
+   ctx.fillStyle = t.ground;
+   ctx.fillRect(0, 200, canvas.width, 40);
+   
+   // Ground texture lines (scrolling effect)
+   ctx.fillStyle = t.obstacle + '80';
+   for(let i=0; i<10; i++) {
+     let lineX = (i * 50 - (distance * 10) % 50);
+     ctx.fillRect(lineX, 210, 10, 4);
+   }
+
+   // Draw Player
+   ctx.fillStyle = '#000'; // Body
+   ctx.fillRect(p.x, p.y, p.w, p.h);
+   
+   // Cowboy Hat
+   ctx.fillStyle = '#8b5a2b';
+   ctx.fillRect(p.x - 6, p.y - 4, p.w + 12, 4); // Brim
+   ctx.fillRect(p.x + 2, p.y - 12, p.w - 4, 8); // Top
+   
+   // Visor/Eye
+   ctx.fillStyle = '#0ff';
+   ctx.fillRect(p.x + 12, p.y + 4, 6, 4);
+
+   // Lasers
+   ctx.fillStyle = '#0ff';
+   for (let l of lasers) ctx.fillRect(l.x, l.y, l.w, l.h);
+
+   // Obstacles
+   ctx.fillStyle = t.obstacle;
+   for (let o of obstacles) {
+     ctx.fillRect(o.x, o.y, o.w, o.h);
+     ctx.fillStyle = '#000'; // detail
+     ctx.fillRect(o.x + 4, o.y + 4, o.w - 8, o.h - 8);
+     ctx.fillStyle = t.obstacle;
+   }
+
+   // Enemies (Alien ships/drones)
+   for (let e of enemies) {
+     ctx.fillStyle = '#ff00ff';
+     ctx.fillRect(e.x, e.y, e.w, e.h);
+     ctx.fillStyle = '#fff'; // Eye
+     ctx.fillRect(e.x + 4, e.y + 6, 8, 4);
+     ctx.fillStyle = '#0ff'; // Thruster
+     ctx.fillRect(e.x + e.w, e.y + 8, 4, 4);
+   }
+
+   // Particles
+   for (let pt of particles) {
+     ctx.fillStyle = pt.color;
+     ctx.fillRect(pt.x, pt.y, 3, 3);
+   }
+
+   // Game Over Overlay
+   if (gameOver) {
+     ctx.fillStyle = 'rgba(0,0,0,0.8)';
+     ctx.fillRect(0, 0, canvas.width, canvas.height);
+     ctx.fillStyle = '#fff';
+     ctx.textAlign = 'center';
+     ctx.font = '24px monospace';
+     ctx.fillText('GAME OVER', canvas.width/2, 100);
+     ctx.font = '14px monospace';
+     ctx.fillText('Tap/Click or Press Button to Restart', canvas.width/2, 140);
+     ctx.textAlign = 'left';
+   }
+ }
+
+ function gameLoop() {
+   if (!gameOver) update();
+   draw();
+   if (gameStarted) requestAnimationFrame(gameLoop);
+ }
+
+ // Initial draw before start
+ draw();
+
+</script>
+</body>
+</html>
