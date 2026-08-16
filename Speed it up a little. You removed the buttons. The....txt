@@ -1,0 +1,521 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Space Bounty Hunter</title>
+<style>
+ body { 
+   margin: 0; padding: 0; background-color: #111; font-family: monospace; 
+   touch-action: none; user-select: none; overflow: hidden;
+   display: flex; justify-content: center; align-items: center; height: 100vh;
+ }
+ 
+ /* Gameboy Shell - Maximized for Screen Space */
+ #gameboy { 
+   background: #d3d7d7; width: 100vw; height: 100vh; max-width: 1200px; 
+   display: flex; flex-direction: column; box-sizing: border-box;
+   padding: 10px; position: relative; box-shadow: inset 0 0 20px rgba(0,0,0,0.2);
+ }
+ 
+ /* Top Bezel & Screen */
+ #screen-container { 
+   background: #222; flex-grow: 1; border-radius: 10px 10px 25px 10px; 
+   position: relative; display: flex; flex-direction: column; 
+   padding: 10px; margin-bottom: 10px; box-shadow: inset 0 0 10px #000;
+ }
+
+ #ui-top { 
+   display: flex; justify-content: space-between; font-size: 16px; 
+   padding: 5px 10px 10px 10px; color: #fff; font-weight: bold; letter-spacing: 1px;
+ }
+ 
+ canvas { 
+   display: block; width: 100%; flex-grow: 1; border-radius: 5px;
+   background: #000; box-shadow: inset 0 0 15px rgba(0,0,0,1);
+   /* Internal resolution is fixed, but CSS stretches to fill the box */
+ }
+ 
+ /* Bottom Controls Area - Minimized dead space */
+ #controls-panel { 
+   height: 160px; display: flex; justify-content: space-between; align-items: center; 
+   padding: 0 30px; box-sizing: border-box;
+ }
+
+ /* True D-Pad Styling */
+ .d-pad-container { position: relative; width: 140px; height: 140px; }
+ .d-btn { 
+   position: absolute; background: #333; border: none; outline: none; 
+   box-shadow: inset -2px -2px 5px rgba(0,0,0,0.6), inset 2px 2px 5px rgba(255,255,255,0.2); 
+   cursor: pointer; touch-action: none; -webkit-appearance: none;
+ }
+ .d-btn:active { background: #111; }
+ .d-btn.up { top: 10px; left: 50px; width: 40px; height: 40px; border-radius: 5px 5px 0 0; }
+ .d-btn.down { bottom: 10px; left: 50px; width: 40px; height: 40px; border-radius: 0 0 5px 5px; }
+ .d-btn.left { top: 50px; left: 10px; width: 40px; height: 40px; border-radius: 5px 0 0 5px; }
+ .d-btn.right { top: 50px; right: 10px; width: 40px; height: 40px; border-radius: 0 5px 5px 0; }
+ .d-center { 
+   position: absolute; top: 50px; left: 50px; width: 40px; height: 40px; 
+   background: #333; pointer-events: none;
+ }
+ .d-center::after {
+   content: ''; position: absolute; top: 15px; left: 15px; width: 10px; height: 10px;
+   background: #222; border-radius: 50%; /* Center divet */
+ }
+
+ /* Action Buttons A/B */
+ .action-buttons { display: flex; gap: 20px; transform: rotate(-20deg); margin-right: 10px;}
+ .btn-action { 
+   background: #c00; width: 65px; height: 65px; border-radius: 50%; 
+   border: 3px solid #600; color: #fff; font-family: monospace;
+   display: flex; justify-content: center; align-items: center; 
+   font-weight: bold; font-size: 24px; cursor: pointer; touch-action: none;
+   box-shadow: 0 6px 0 #700, 0 8px 10px rgba(0,0,0,0.5); -webkit-appearance: none;
+ }
+ .btn-action:active { 
+   transform: translateY(6px); box-shadow: 0 0 0 #700, 0 2px 3px rgba(0,0,0,0.5); background: #a00;
+ }
+ 
+ #start-overlay {
+   position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+   display: flex; justify-content: center; align-items: center; flex-direction: column;
+   color: #fff; font-size: 28px; background: rgba(0,0,0,0.7);
+   border-radius: 10px 10px 25px 10px; pointer-events: none; z-index: 20; text-align: center;
+ }
+ .blink { animation: blinker 1.2s linear infinite; font-size: 18px; margin-top: 15px; color: #0ff;}
+ @keyframes blinker { 50% { opacity: 0; } }
+</style>
+</head>
+<body>
+
+<div id="gameboy">
+ <div id="screen-container">
+   <div id="ui-top">
+     <span id="score-display">DISTANCE: 0</span>
+     <span id="theme-display">ZONE: UNKNOWN</span>
+   </div>
+   <!-- Canvas internal logic is fixed, but it stretches visually to fill the screen -->
+   <canvas id="gameCanvas" width="800" height="400"></canvas>
+   <div id="start-overlay">
+     <div>SPACE BOUNTY HUNTER</div>
+     <div class="blink">TAP SCREEN OR PRESS A BUTTON TO START</div>
+   </div>
+ </div>
+ 
+ <div id="controls-panel">
+   <div class="d-pad-container">
+     <div class="d-center"></div>
+     <button class="d-btn up" id="btn-up"></button>
+     <button class="d-btn down" id="btn-down"></button>
+     <button class="d-btn left" id="btn-left"></button>
+     <button class="d-btn right" id="btn-right"></button>
+   </div>
+   <div class="action-buttons">
+     <button class="btn-action" id="btn-b">B</button>
+     <button class="btn-action" id="btn-a">A</button>
+   </div>
+ </div>
+</div>
+
+<script>
+ const canvas = document.getElementById('gameCanvas');
+ const ctx = canvas.getContext('2d');
+ const scoreDisplay = document.getElementById('score-display');
+ const themeDisplay = document.getElementById('theme-display');
+ const startOverlay = document.getElementById('start-overlay');
+
+ // --- Audio System ---
+ let audioCtx;
+ let musicInterval;
+ 
+ function initAudio() {
+   if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+   if (audioCtx.state === 'suspended') audioCtx.resume();
+ }
+
+ function playSFX(type) {
+   if (!audioCtx) return;
+   const osc = audioCtx.createOscillator();
+   const gain = audioCtx.createGain();
+   osc.connect(gain);
+   gain.connect(audioCtx.destination);
+   
+   if (type === 'shoot') {
+     osc.type = 'square';
+     osc.frequency.setValueAtTime(800, audioCtx.currentTime);
+     osc.frequency.exponentialRampToValueAtTime(100, audioCtx.currentTime + 0.1);
+     gain.gain.setValueAtTime(0.05, audioCtx.currentTime);
+     osc.start(); osc.stop(audioCtx.currentTime + 0.1);
+   } else if (type === 'jump') {
+     osc.type = 'square';
+     osc.frequency.setValueAtTime(150, audioCtx.currentTime);
+     osc.frequency.linearRampToValueAtTime(400, audioCtx.currentTime + 0.15);
+     gain.gain.setValueAtTime(0.05, audioCtx.currentTime);
+     osc.start(); osc.stop(audioCtx.currentTime + 0.15);
+   } else if (type === 'explosion') {
+     osc.type = 'sawtooth';
+     osc.frequency.setValueAtTime(100, audioCtx.currentTime);
+     osc.frequency.exponentialRampToValueAtTime(10, audioCtx.currentTime + 0.3);
+     gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
+     osc.start(); osc.stop(audioCtx.currentTime + 0.3);
+   }
+ }
+
+ // 8-bit Hair Metal Arpeggios (4 tracks)
+ const tracks = [
+   [220, 277, 330, 440, 330, 277, 220, 165], 
+   [330, 392, 440, 523, 440, 392, 330, 261], 
+   [110, 110, 147, 165, 110, 110, 165, 147], 
+   [440, 415, 392, 349, 330, 294, 277, 261]  
+ ];
+
+ function playMusic() {
+   if (!audioCtx) return;
+   if (musicInterval) clearInterval(musicInterval);
+   
+   let trackIdx = Math.floor(Math.random() * tracks.length);
+   let noteIdx = 0;
+   
+   musicInterval = setInterval(() => {
+     if (gameOver) return;
+     const osc = audioCtx.createOscillator();
+     const gain = audioCtx.createGain();
+     osc.type = 'square';
+     osc.frequency.value = tracks[trackIdx][noteIdx];
+     osc.connect(gain);
+     gain.connect(audioCtx.destination);
+     gain.gain.setValueAtTime(0.02, audioCtx.currentTime);
+     gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.1);
+     osc.start();
+     osc.stop(audioCtx.currentTime + 0.1);
+     noteIdx = (noteIdx + 1) % tracks[trackIdx].length;
+   }, 120); // Steady tempo
+ }
+
+ // --- Game Engine ---
+ let p = { x: 100, y: 250, w: 26, h: 44, vx: 0, vy: 0, speed: 5, jump: -11, grounded: false };
+ let groundY = 330; 
+ let keys = { left: false, right: false };
+ let lasers = [];
+ let enemies = [];
+ let obstacles = [];
+ let particles = [];
+ let distance = 0;
+ let bgScrollOffset = 0;
+ let frameCount = 0;
+ let gameOver = false;
+ let gameStarted = false;
+ let themeIdx = 0;
+ 
+ const themes = [
+   { name: 'Desert', bg: '#e0cda7', ground: '#d38b5d', obstacle: '#a65021' },
+   { name: 'Ice Mountain', bg: '#d0e8f2', ground: '#79a3b1', obstacle: '#456268' },
+   { name: 'Volcano', bg: '#4a1c40', ground: '#390623', obstacle: '#bd1b21' },
+   { name: 'Jungle', bg: '#7b9a74', ground: '#3e5c3e', obstacle: '#213921' }
+ ];
+
+ function startGame() {
+   initAudio();
+   p.x = 100; p.y = 200; p.vx = 0; p.vy = 0;
+   lasers = []; enemies = []; obstacles = []; particles = [];
+   distance = 0; bgScrollOffset = 0; frameCount = 0; gameOver = false; gameStarted = true;
+   startOverlay.style.display = 'none';
+   
+   themeIdx = Math.floor(Math.random() * themes.length);
+   playMusic();
+   requestAnimationFrame(gameLoop);
+ }
+
+ // Input Handling
+ const bindInput = (id, action, type) => {
+   const el = document.getElementById(id);
+   const trigger = (val) => {
+     if(!gameStarted && val) return startGame();
+     if(gameOver && val) return startGame();
+     
+     if(type === 'move') keys[action] = val;
+     if(type === 'action' && val) handleAction(action);
+   };
+   if(el) {
+     el.addEventListener('mousedown', (e) => { e.preventDefault(); trigger(true); });
+     el.addEventListener('touchstart', (e) => { e.preventDefault(); trigger(true); });
+     el.addEventListener('mouseup', (e) => { e.preventDefault(); trigger(false); });
+     el.addEventListener('touchend', (e) => { e.preventDefault(); trigger(false); });
+     el.addEventListener('mouseleave', (e) => { e.preventDefault(); trigger(false); });
+   }
+ };
+
+ bindInput('btn-left', 'left', 'move');
+ bindInput('btn-right', 'right', 'move');
+ bindInput('btn-a', 'shoot', 'action');
+ bindInput('btn-b', 'jump', 'action');
+ canvas.addEventListener('click', () => { if(!gameStarted || gameOver) startGame(); });
+
+ window.addEventListener('keydown', (e) => {
+   if(!gameStarted || gameOver) return startGame();
+   if(e.code === 'ArrowLeft') keys.left = true;
+   if(e.code === 'ArrowRight') keys.right = true;
+   if(e.code === 'KeyX' && !e.repeat) handleAction('shoot'); // A button
+   if((e.code === 'KeyZ' || e.code === 'Space') && !e.repeat) handleAction('jump'); // B button
+ });
+ window.addEventListener('keyup', (e) => {
+   if(e.code === 'ArrowLeft') keys.left = false;
+   if(e.code === 'ArrowRight') keys.right = false;
+ });
+
+ function handleAction(action) {
+   if (action === 'jump' && p.grounded) {
+     p.vy = p.jump;
+     p.grounded = false;
+     playSFX('jump');
+   }
+   if (action === 'shoot') {
+     lasers.push({ x: p.x + p.w + 6, y: p.y + 19, w: 18, h: 4, vx: 15 });
+     playSFX('shoot');
+   }
+ }
+
+ function spawnEntities() {
+   // Sped up slightly from 1/4 speed, but much slower than original
+   let spawnRate = Math.max(0.006, 0.02 - (distance / 40000));
+   
+   if (Math.random() < spawnRate) {
+     obstacles.push({ x: canvas.width + 50, y: groundY - 40, w: 40, h: 40 });
+   } else if (Math.random() < spawnRate * 1.5) {
+     enemies.push({ x: canvas.width + 50, y: groundY - 120 - Math.random() * 80, w: 40, h: 40, vx: -2 });
+   }
+ }
+
+ function spawnParticles(x, y, color) {
+   for(let i=0; i<25; i++) {
+     particles.push({
+       x: x, y: y, 
+       vx: (Math.random() - 0.5) * 12, 
+       vy: (Math.random() - 0.5) * 12, 
+       life: 30, color: color
+     });
+   }
+ }
+
+ function checkCollision(r1, r2) {
+   return !(r2.x > r1.x + r1.w || r2.x + r2.w < r1.x || r2.y > r1.y + r1.h || r2.y + r2.h < r1.y);
+ }
+
+ function update() {
+   frameCount++;
+   distance += 0.05; // Sped up distance accumulation (was 0.025, originally 0.1)
+   
+   if (frameCount % 800 === 0) {
+     themeIdx = Math.floor(Math.random() * themes.length);
+     playMusic(); 
+   }
+
+   scoreDisplay.innerText = `DISTANCE: ${Math.floor(distance)}m`;
+   themeDisplay.innerText = `ZONE: ${themes[themeIdx].name.toUpperCase()}`;
+
+   // Player X
+   if (keys.left) p.vx = -p.speed;
+   else if (keys.right) p.vx = p.speed;
+   else p.vx = 0;
+   
+   p.x += p.vx;
+   if (p.x < 10) p.x = 10;
+   if (p.x > canvas.width - p.w - 10) p.x = canvas.width - p.w - 10;
+
+   // Player Y (Gravity)
+   p.vy += 0.5; // Slightly heavier gravity for snappier jumps
+   p.y += p.vy;
+   
+   let floorLevel = groundY - p.h;
+   if (p.y >= floorLevel) {
+     p.y = floorLevel;
+     p.vy = 0;
+     p.grounded = true;
+   }
+
+   spawnEntities();
+   
+   // Background scroll speed based on distance
+   let scrollSpeed = 2 + (distance / 800); 
+   bgScrollOffset += scrollSpeed;
+
+   // Lasers
+   for (let i = lasers.length - 1; i >= 0; i--) {
+     lasers[i].x += lasers[i].vx;
+     if (lasers[i].x > canvas.width + 50) lasers.splice(i, 1);
+   }
+
+   // Obstacles
+   for (let i = obstacles.length - 1; i >= 0; i--) {
+     let o = obstacles[i];
+     o.x -= scrollSpeed;
+     if (checkCollision(p, o)) triggerGameOver();
+     if (o.x < -80) obstacles.splice(i, 1);
+   }
+
+   // Enemies
+   for (let i = enemies.length - 1; i >= 0; i--) {
+     let e = enemies[i];
+     e.x += e.vx - scrollSpeed;
+     
+     if (checkCollision(p, e)) triggerGameOver();
+     
+     let destroyed = false;
+     for (let j = lasers.length - 1; j >= 0; j--) {
+       if (checkCollision(lasers[j], e)) {
+         lasers.splice(j, 1);
+         spawnParticles(e.x + 20, e.y + 20, '#ff00ff');
+         playSFX('explosion');
+         destroyed = true;
+         distance += 5; // Bonus
+         break;
+       }
+     }
+     
+     if (destroyed) {
+       enemies.splice(i, 1);
+     } else if (e.x < -80) {
+       enemies.splice(i, 1);
+     }
+   }
+
+   // Particles
+   for (let i = particles.length - 1; i >= 0; i--) {
+     let pt = particles[i];
+     pt.x += pt.vx; pt.y += pt.vy; pt.life--;
+     if (pt.life <= 0) particles.splice(i, 1);
+   }
+ }
+
+ function triggerGameOver() {
+   gameOver = true;
+   playSFX('explosion');
+   if (musicInterval) clearInterval(musicInterval);
+ }
+
+ function draw() {
+   let t = themes[themeIdx];
+   
+   // Background
+   ctx.fillStyle = t.bg;
+   ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+   // Scenery detail (Moon/Sun)
+   ctx.fillStyle = t.obstacle + '40';
+   ctx.beginPath(); ctx.arc(canvas.width - 200, 100, 70, 0, Math.PI * 2); ctx.fill();
+
+   // Ground
+   ctx.fillStyle = t.ground;
+   ctx.fillRect(0, groundY, canvas.width, canvas.height - groundY);
+   
+   // Ground texture lines (scrolling effect)
+   ctx.fillStyle = t.obstacle + '80';
+   for(let i=0; i< (canvas.width / 100) + 2; i++) {
+     let lineX = (i * 100 - (bgScrollOffset) % 100);
+     ctx.fillRect(lineX, groundY + 20, 30, 8);
+     ctx.fillRect(lineX + 50, groundY + 45, 20, 8);
+   }
+
+   // Draw Player (Humanized Design)
+   // Cowboy Hat
+   ctx.fillStyle = '#8b5a2b';
+   ctx.fillRect(p.x - 6, p.y - 6, p.w + 12, 6); // Brim
+   ctx.fillRect(p.x + 4, p.y - 18, p.w - 8, 12); // Top
+
+   // Head (Skin tone)
+   ctx.fillStyle = '#ffccaa';
+   ctx.fillRect(p.x + 4, p.y, 18, 14);
+
+   // Eye / Tech Visor
+   ctx.fillStyle = '#0ff';
+   ctx.fillRect(p.x + 14, p.y + 4, 8, 4);
+
+   // Torso (Space Armor)
+   ctx.fillStyle = '#4455aa';
+   ctx.fillRect(p.x + 2, p.y + 14, 22, 18);
+   ctx.fillStyle = '#7788dd';
+   ctx.fillRect(p.x + 8, p.y + 16, 10, 10); // Armor details
+
+   // Arm holding laser
+   ctx.fillStyle = '#ffccaa';
+   ctx.fillRect(p.x + 8, p.y + 18, 16, 6);
+
+   // Gun
+   ctx.fillStyle = '#333';
+   ctx.fillRect(p.x + 24, p.y + 16, 16, 10);
+   ctx.fillStyle = '#888';
+   ctx.fillRect(p.x + 40, p.y + 18, 6, 6); // Gun barrel detail
+
+   // Legs
+   ctx.fillStyle = '#223388';
+   if (!p.grounded) {
+     ctx.fillRect(p.x + 4, p.y + 32, 8, 10); // Left leg up
+     ctx.fillRect(p.x + 14, p.y + 32, 8, 14); // Right leg down
+   } else if (Math.floor(frameCount / 10) % 2 === 0 && p.vx !== 0) {
+     ctx.fillRect(p.x + 2, p.y + 32, 8, 12); // Running pose A
+     ctx.fillRect(p.x + 16, p.y + 32, 8, 12); 
+   } else {
+     ctx.fillRect(p.x + 6, p.y + 32, 6, 12); // Standing / Running pose B
+     ctx.fillRect(p.x + 14, p.y + 32, 6, 12);
+   }
+
+   // Lasers
+   ctx.fillStyle = '#0ff';
+   for (let l of lasers) {
+     ctx.fillRect(l.x, l.y, l.w, l.h);
+     ctx.fillStyle = '#fff';
+     ctx.fillRect(l.x + l.w - 6, l.y, 6, l.h); // Core of laser
+     ctx.fillStyle = '#0ff';
+   }
+
+   // Obstacles
+   ctx.fillStyle = t.obstacle;
+   for (let o of obstacles) {
+     ctx.fillRect(o.x, o.y, o.w, o.h);
+     ctx.fillStyle = '#111'; // Inner texture
+     ctx.fillRect(o.x + 8, o.y + 8, o.w - 16, o.h - 16);
+     ctx.fillStyle = t.obstacle;
+   }
+
+   // Enemies (Alien ships)
+   for (let e of enemies) {
+     ctx.fillStyle = '#ff00ff';
+     ctx.fillRect(e.x, e.y, e.w, e.h);
+     ctx.fillStyle = '#fff'; // Eye
+     ctx.fillRect(e.x + 8, e.y + 10, 16, 8);
+     ctx.fillStyle = '#0ff'; // Thruster
+     ctx.fillRect(e.x + e.w, e.y + 16, 8, 8);
+   }
+
+   // Particles
+   for (let pt of particles) {
+     ctx.fillStyle = pt.color;
+     ctx.fillRect(pt.x, pt.y, 6, 6);
+   }
+
+   // Game Over Overlay
+   if (gameOver) {
+     ctx.fillStyle = 'rgba(0,0,0,0.85)';
+     ctx.fillRect(0, 0, canvas.width, canvas.height);
+     ctx.fillStyle = '#fff';
+     ctx.textAlign = 'center';
+     ctx.font = 'bold 40px monospace';
+     ctx.fillText('GAME OVER', canvas.width/2, canvas.height/2 - 20);
+     ctx.font = '22px monospace';
+     ctx.fillStyle = '#0ff';
+     ctx.fillText('Tap/Click or Press Button to Restart', canvas.width/2, canvas.height/2 + 30);
+     ctx.textAlign = 'left';
+   }
+ }
+
+ function gameLoop() {
+   if (!gameOver) update();
+   draw();
+   if (gameStarted) requestAnimationFrame(gameLoop);
+ }
+
+ draw(); // Initial draw
+
+</script>
+</body>
+</html>
